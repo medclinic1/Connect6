@@ -122,3 +122,30 @@ def print_score(move_list, n):
             else:
                 print(f"{score:4}", end="")
         print()
+
+
+def is_board_full(board):
+    # Recorremos solo el interior (sin el borde). "in" sobre una lista se
+    # ejecuta en C, por lo que es mucho más rápido que un doble bucle en Python.
+    for row in board[1:Defines.GRID_NUM - 1]:
+        if Defines.NOSTONE in row[1:Defines.GRID_NUM - 1]:
+            return False
+    return True
+
+def check_game_over(board, preMove):
+    """
+    Comprueba si la partida ha terminado tras la jugada preMove.
+    Devuelve:
+      - Defines.BLACK / Defines.WHITE -> ha ganado ese color
+      - Defines.DRAW                  -> empate (tablero lleno)
+      - None                          -> la partida continúa
+    """
+    # 1) Victoria: solo puede haberla formado quien acaba de mover,
+    #    así que el ganador es el color de las piedras de preMove.
+    if is_win_by_premove(board, preMove):
+        return board[preMove.positions[0].x][preMove.positions[0].y]
+    # 2) Empate: no queda ninguna casilla libre.
+    if is_board_full(board):
+        return Defines.DRAW
+    # 3) La partida sigue.
+    return None
