@@ -1,4 +1,6 @@
 from tools import *
+from evaluation import evaluate
+from move_generator import generate_moves
 
 class SearchEngine():
     def __init__(self):
@@ -14,55 +16,53 @@ class SearchEngine():
         self.m_total_nodes = 0
 
     def alpha_beta_search(self, depth, alpha, beta, ourColor, bestMove, preMove):
-    
-        #Check game result
-        if (is_win_by_premove(self.m_board, preMove)):
-            if (ourColor == self.m_chess_type):
-                #Opponent wins.
-                return 0;
-            else:
-                #Self wins.
-                return Defines.MININT + 1;
-        
-        alpha = 0
-        if(self.check_first_move()):
-            bestMove.positions[0].x = 10
-            bestMove.positions[0].y = 10
-            bestMove.positions[1].x = 10
-            bestMove.positions[1].y = 10
-        else:   
-            move1 = self.find_possible_move()
-            bestMove.positions[0].x = move1[0]
-            bestMove.positions[0].y = move1[1]
-            bestMove.positions[1].x = move1[0]
-            bestMove.positions[1].y = move1[1]
-            make_move(self.m_board,bestMove,ourColor)
-            
-            '''#Check game result
-            if (is_win_by_premove(self.m_board, bestMove)):
-                #Self wins.
-                return Defines.MININT + 1;'''
-            
-            move2 = self.find_possible_move()
-            bestMove.positions[1].x = move2[0]
-            bestMove.positions[1].y = move2[1]
-            make_move(self.m_board,bestMove,ourColor)
+        # Number of nodes explored
+        self.m_total_nodes += 1
 
-        return alpha
-        
-    def check_first_move(self):
-        for i in range(1,len(self.m_board)-1):
-            for j in range(1, len(self.m_board[i])-1):
-                if(self.m_board[i][j] != Defines.NOSTONE):
-                    return False
-        return True
-        
-    def find_possible_move(self):
-        for i in range(1,len(self.m_board)-1):
-            for j in range(1, len(self.m_board[i])-1):
-                if(self.m_board[i][j] == Defines.NOSTONE):
-                    return (i,j)
-        return (-1,-1)
+        # Determine which turn is it (even = our turn) (MAX)
+        # (odd = rival's turn) (MIN)
+        is_max_node = (self.m_alphabeta_depth - depth) % 2 == 0
+        current_color = ourColor if is_max_node else (ourColor ^ 3)
+
+        #if game is over or we reached 0 depth (limit depth) stop the search.
+        if depth == 0 or check_game_over(self.m_board, preMove) is not None:
+            return evaluate(self.m_board, ourColor, preMove) #Otherwise return heuristic value
+
+        #generate cantidades, limited by max_moves and max_cells (naive proposal)
+        moves = generate_moves(self.m_board, current_color)
+
+        #Min-Max basic algorithm
+        if is_max_node: #our turn
+            best_score = Defines.MININT
+            for move in moves:
+                # Simulate move
+                make_move(self.m_board, move, current_color)
+                # recursive call exploring +1 depth in tree.
+                score = self.alpha_beta_search(depth - 1, alpha, beta, ourColor, bestMove, move)
+                # Unmake_move until we are sure it's the right move
+                unmake_move(self.m_board, move)
+
+                if score > best_score:
+                    best_score = score
+                    # Update best move only if we are at max depth defined.
+                    if depth == self.m_alphabeta_depth:
+                        bestMove.positions[0].x = move.positions[0].x
+                        bestMove.positions[0].y = move.positions[0].y
+                        bestMove.positions[1].x = move.positions[1].x
+                        bestMove.positions[1].y = move.positions[1].y
+            return best_score
+            
+        else:
+            # Rival's turn (minimize our score)
+            best_score = Defines.MAXINT
+            for move in moves:
+                make_move(self.m_board, move, current_color)
+                score = self.alpha_beta_search(depth - 1, alpha, beta, ourColor, bestMove, move)
+                unmake_move(self.m_board, move)
+
+                if score < best_score:
+                    best_score = score
+            return best_score
 
 def flush_output():
     import sys
