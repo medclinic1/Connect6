@@ -16,44 +16,46 @@ class SearchEngine():
         self.m_total_nodes = 0
 
     def alpha_beta_search(self, depth, alpha, beta, ourColor, bestMove, preMove):
-        # Number of nodes explored
+        # 1. Contabilizamos el nodo para las métricas de rendimiento
         self.m_total_nodes += 1
-
-        # Determine which turn is it (even = our turn) (MAX)
-        # (odd = rival's turn) (MIN)
+        
+        # 2. Determinamos de quién es el turno
         is_max_node = (self.m_alphabeta_depth - depth) % 2 == 0
         current_color = ourColor if is_max_node else (ourColor ^ 3)
 
-        #if game is over or we reached 0 depth (limit depth) stop the search.
+        # 3. Condición de parada (límite de profundidad o fin del juego)
         if depth == 0 or check_game_over(self.m_board, preMove) is not None:
-            return evaluate(self.m_board, ourColor, preMove) #Otherwise return heuristic value
+            return evaluate(self.m_board, ourColor, preMove)
 
-        #generate cantidades, limited by max_moves and max_cells (naive proposal)
-        moves = generate_moves(self.m_board, current_color)
+        # 4. Generar jugadas candidatas
+        moves = generate_moves(self.m_board, current_color, max_moves=20)
 
-        #Min-Max basic algorithm
-        if is_max_node: #our turn
+        # --- NODO MAX (Nuestro turno: buscamos maximizar la puntuación) ---
+        if is_max_node:
             best_score = Defines.MININT
             for move in moves:
-                # Simulate move
                 make_move(self.m_board, move, current_color)
-                # recursive call exploring +1 depth in tree.
                 score = self.alpha_beta_search(depth - 1, alpha, beta, ourColor, bestMove, move)
-                # Unmake_move until we are sure it's the right move
                 unmake_move(self.m_board, move)
 
                 if score > best_score:
                     best_score = score
-                    # Update best move only if we are at max depth defined.
+                    # Solo guardamos el movimiento real si estamos en la raíz del árbol
                     if depth == self.m_alphabeta_depth:
                         bestMove.positions[0].x = move.positions[0].x
                         bestMove.positions[0].y = move.positions[0].y
                         bestMove.positions[1].x = move.positions[1].x
                         bestMove.positions[1].y = move.positions[1].y
+                
+                # PODA ALFA-BETA: Actualizamos alfa y podamos si es necesario
+                alpha = max(alpha, best_score)
+                if beta <= alpha:
+                    break # El oponente nunca nos dejará llegar a esta rama, dejamos de explorar
+                    
             return best_score
             
+        # --- NODO MIN (Turno del rival: busca minimizar nuestra puntuación) ---
         else:
-            # Rival's turn (minimize our score)
             best_score = Defines.MAXINT
             for move in moves:
                 make_move(self.m_board, move, current_color)
@@ -62,6 +64,12 @@ class SearchEngine():
 
                 if score < best_score:
                     best_score = score
+                
+                # PODA ALFA-BETA: Actualizamos beta y podamos si es necesario
+                beta = min(beta, best_score)
+                if beta <= alpha:
+                    break # Nosotros nunca elegiremos llegar a esta rama, dejamos de explorar
+                    
             return best_score
 
 def flush_output():
