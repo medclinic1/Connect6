@@ -4,6 +4,14 @@ import sys
 from search_engine import SearchEngine
 import time
 
+# Control de tiempo (sesión 4). El comando "depth d" ya no fija la profundidad:
+# fija el tiempo por turno (enunciado, sección 5), y la profundidad la decide la
+# profundización iterativa según lo que dé tiempo a calcular.
+SECONDS_PER_DEPTH_UNIT = 1.0   # "depth d" -> d segundos por turno (la GUI manda 4, 5 o 6)
+DEFAULT_TIME_LIMIT = 5.0       # Si la GUI no manda "depth"
+MAX_TIME_LIMIT = 25.0          # La GUI da timeout a los 30 s: nunca pedimos más de 25
+SAFETY_MARGIN = 0.3            # Margen para la última llamada y la comunicación con la GUI
+
 class GameEngine:
     def __init__(self, name=Defines.ENGINE_NAME):
         if name and len(name) > 0:
@@ -11,7 +19,7 @@ class GameEngine:
                 self.m_engine_name = name
             else:
                 print(f"Too long Engine Name: {name}, should be less than: {Defines.MSG_LENGTH}")
-        self.m_alphabeta_depth = 6
+        self.m_time_limit = DEFAULT_TIME_LIMIT
         self.m_board = t = [ [0]*Defines.GRID_NUM for i in range(Defines.GRID_NUM)]
         self.init_game()
         self.m_search_engine = SearchEngine()
@@ -33,7 +41,7 @@ class GameEngine:
             "              and the engine will search the move for the next step.\n"
             " new black   - start a new game and set the engine to black player.\n"
             " new white   - start a new game and set it to white.\n"
-            " depth d     - set the alpha beta search depth, default is 6.\n"
+            " depth d     - set the time limit per move to d seconds (default 5).\n"
             " vcf         - set vcf search.\n"
             " unvcf       - set none vcf search.\n"
             " help        - print this help.\n")
@@ -42,7 +50,12 @@ class GameEngine:
         msg = ""
         self.on_help()
         while True:
-            msg = input().strip()
+            try:
+                msg = input().strip()
+            except EOFError:
+                # La GUI cierra la entrada estándar al liberar el motor
+                # (al empezar otra partida o al cerrar): salimos sin error.
+                break
             log_to_file(msg)
             if msg == "name":
                 print(f"name {self.m_engine_name}")
@@ -91,10 +104,10 @@ class GameEngine:
                     print(msg)
                     flush_output()
             elif msg.startswith("depth"):
-                d = int(msg[6:])
-                if 0 < d < 10:
-                    self.m_alphabeta_depth = d
-                print(f"Set the search depth to {self.m_alphabeta_depth}.\n")
+                d = float(msg[6:])
+                if d > 0:
+                    self.m_time_limit = min(d * SECONDS_PER_DEPTH_UNIT, MAX_TIME_LIMIT)
+                print(f"Set the time limit to {self.m_time_limit:.1f} s.\n")
             elif msg == "help":
                 self.on_help()
         return 0
@@ -105,11 +118,12 @@ class GameEngine:
         end = 0
 
         start = time.perf_counter()
-        self.m_search_engine.before_search(self.m_board, self.m_chess_type, self.m_alphabeta_depth)
-        score = self.m_search_engine.alpha_beta_search(self.m_alphabeta_depth, Defines.MININT, Defines.MAXINT, ourColor, bestMove, bestMove)
+        budget = max(0.1, self.m_time_limit - SAFETY_MARGIN)
+        score = self.m_search_engine.iterative_deepening(self.m_board, ourColor, bestMove, bestMove, budget)
         end = time.perf_counter()
 
         print(f"AB Time:\t{end - start:.3f}")
+        print(f"Depth:\t{self.m_search_engine.m_depth_reached}")
         print(f"Node:\t{self.m_search_engine.m_total_nodes}\n")
         print(f"Score:\t{score:.3f}")
         return True
