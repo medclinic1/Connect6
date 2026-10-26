@@ -3,6 +3,8 @@ from tools import *
 from evaluation import evaluate, IncrementalFeatures
 from move_generator import generate_moves, FORCING_THREATS
 from evaluation import WIN_SCORE
+import tss
+from itertools import combinations
 
 WIN_SCORE_QS = WIN_SCORE                       # |valor| >= esto: táctica ya decidida
 FORCING_PRIORITY = FORCING_THREATS * 10**7     # puntuación mínima del generador para una jugada que crea >= 2 amenazas
@@ -21,6 +23,21 @@ USE_HISTORY = True     # Heurística histórica: puntos a las jugadas que cortan
 USE_QS = True          # Búsqueda de quiescencia sobre amenazas en las hojas
 QS_MAX_PLY = 2         # Jugadas extra como máximo en la quiescencia
 QS_MAX_MOVES = 6       # N-best: candidatas por nodo de quiescencia (forward pruning)
+# Gestión del tiempo (sesión 5). Antes no se empezaba la iteración d+1 si
+# t_d·(t_d/t_{d-1}) no cabía en el tiempo restante, pero con la quiescencia el
+# cociente es muy inestable (p. ej. 0,006 s -> 0,40 s da ×65 y predice 26 s para
+# una iteración que tarda 0,26 s): el motor paraba con el 10 % del tiempo usado.
+USE_TIME_PREDICTION = False  # False: se profundiza hasta agotar el tiempo
+USE_PARTIAL_ITER = True      # Aprovechar la iteración interrumpida (ver iterative_deepening)
+# Búsqueda en el espacio de amenazas en la raíz (sesión 5, tss.py). Alfa-beta a
+# profundidad ~3 no ve las secuencias de amenazas de 3 turnos (5-6 capas) con
+# las que gana Cloudict; el oráculo solo explora jugadas forzadas y las demuestra
+# en décimas de segundo.
+USE_TSS = True
+TSS_ATTACK_TURNS = 6         # Buscar victoria forzada propia en <= 6 turnos (VCF largas: son árboles estrechos)
+TSS_DEFENSE_STAGES = (3, 5)  # Filtro de defensa por etapas: primero <= 3 turnos (barato), luego <= 5
+TSS_TIME_FRACTION = 0.4      # Parte del tiempo del turno que puede gastar el oráculo
+TSS_EXTRA_CELLS = 10         # Casillas clave del ataque rival para buscar defensas nuevas
 
 # ---------------------------------------------------------------------------
 # Hashing de Zobrist (tema 3.3, diap. 20-22)
@@ -75,6 +92,8 @@ class SearchEngine():
         self.m_chess_type = None
         self.m_alphabeta_depth = None
         self.m_total_nodes = 0
+        self.m_cutoffs = 0             # cortes alfa-beta (métrica de la sesión 5)
+        self.m_pruned = 0              # candidatas que no se llegaron a explorar por esos cortes
         self.m_deadline = None         # instante (perf_counter) en que hay que parar; None = sin límite
         self.m_pv_move = None          # mejor jugada de la iteración anterior (se explora primero)
         self.m_depth_reached = 0       # última profundidad COMPLETADA
@@ -94,12 +113,18 @@ class SearchEngine():
         self.m_root_scores_cur = {}
         self.m_use_qs = USE_QS
         self.m_qs_nodes = 0
+        self.m_root_moves = None       # candidatas de la raíz filtradas por el oráculo (None = las del generador)
+        self.m_tss_info = None         # qué ha hecho el oráculo en esta jugada (para las métricas)
+        self.m_root_done = 0           # jugadas de la raíz ya evaluadas en la iteración en curso
+        self.m_root_best = None        # mejor valor entre ellas
 
     def before_search(self, board, color, alphabeta_depth, deadline=None):
         self.m_board = [row[:] for row in board]
         self.m_chess_type = color
         self.m_alphabeta_depth = alphabeta_depth
         self.m_total_nodes = 0
+        self.m_cutoffs = 0
+        self.m_pruned = 0
         self.m_deadline = deadline
         self.m_pv_move = None
         self.m_tt = {}                 # tabla nueva en cada jugada (el valor depende de ourColor)
@@ -188,7 +213,7 @@ class SearchEngine():
             if not moves:
                 return stand
             best = Defines.MININT if is_max else Defines.MAXINT
-        for move in moves:
+        for i, move in enumerate(moves):
             self._make(move, mover)
             try:
                 score = self._quiescence(alpha, beta, ourColor, mover ^ 3, move, qply + 1)
@@ -203,6 +228,7 @@ class SearchEngine():
                     best = score
                 beta = min(beta, best)
             if beta <= alpha:
+                self._count_cutoff(len(moves) - i - 1)
                 break
         return best
 
@@ -242,6 +268,12 @@ class SearchEngine():
             h = self.m_history
             rest.sort(key=lambda m: (m.score // 10**7, h.get((color, move_cells(m)), 0)), reverse=True)
         return front + rest
+
+    def _count_cutoff(self, skipped):
+        """Métricas de poda: un corte más y 'skipped' hermanas sin explorar
+        (cada una es un subárbol entero que alfa-beta se ahorra)."""
+        self.m_cutoffs += 1
+        self.m_pruned += skipped
 
     def _record_cutoff(self, move, ply, depth, color):
         """Una jugada que provoca un corte es buena en posiciones parecidas:
@@ -310,6 +342,8 @@ class SearchEngine():
 
         # 4. Generar jugadas candidatas
         moves = generate_moves(self.m_board, current_color, max_moves=MAX_MOVES)
+        if is_root and self.m_root_moves is not None:
+            moves = list(self.m_root_moves)        # raíz ya filtrada por el oráculo de amenazas
 
         # 4b. Ordenación (cuanto antes aparezca la mejor jugada, más poda alfa-beta)
         ply = self.m_alphabeta_depth - depth
@@ -325,7 +359,7 @@ class SearchEngine():
             # la jugada previa del rival -> jugada ilegal.
             if is_root and moves:
                 self._copy_move(moves[0], bestMove)
-            for move in moves:
+            for i, move in enumerate(moves):
                 k = move_key(move, current_color)
                 self._make(move, current_color)
                 self.m_hash ^= k
@@ -343,17 +377,20 @@ class SearchEngine():
                         self._copy_move(move, bestMove)
                 if is_root:
                     self.m_root_scores_cur[move_cells(move)] = score
+                    self.m_root_done += 1
+                    self.m_root_best = best_score
 
                 # PODA ALFA-BETA: Actualizamos alfa y podamos si es necesario
                 alpha = max(alpha, best_score)
                 if beta <= alpha:
                     self._record_cutoff(move, ply, depth, current_color)
+                    self._count_cutoff(len(moves) - i - 1)
                     break # El oponente nunca nos dejará llegar a esta rama, dejamos de explorar
 
         # --- NODO MIN (Turno del rival: busca minimizar nuestra puntuación) ---
         else:
             best_score = Defines.MAXINT
-            for move in moves:
+            for i, move in enumerate(moves):
                 k = move_key(move, current_color)
                 self._make(move, current_color)
                 self.m_hash ^= k
@@ -371,6 +408,7 @@ class SearchEngine():
                 beta = min(beta, best_score)
                 if beta <= alpha:
                     self._record_cutoff(move, ply, depth, current_color)
+                    self._count_cutoff(len(moves) - i - 1)
                     break # Nosotros nunca elegiremos llegar a esta rama, dejamos de explorar
 
         # 5. Guardar en la tabla. Con alfa-beta el valor solo es exacto si cayó
@@ -390,6 +428,115 @@ class SearchEngine():
     # -----------------------------------------------------------------------
     # Profundización iterativa con límite de tiempo (sesión 4)
     # -----------------------------------------------------------------------
+    def _tss_root(self, board, ourColor, root_moves, bestMove, deadline):
+        """
+        Usa tss.py antes de alfa-beta:
+          1. Ataque: si demostramos victoria forzada en <= TSS_ATTACK_TURNS, se juega
+             su primera jugada sin buscar (devuelve WIN_SCORE).
+          2. Defensa: si el rival tendría victoria forzada en <= TSS_DEFENSE_TURNS,
+             se descartan las candidatas tras las que aún la tiene. Si ninguna
+             candidata la evita, se buscan defensas con las casillas clave de
+             su ataque. Lo que no da tiempo a comprobar no se descarta (solo se
+             quitan jugadas con derrota DEMOSTRADA).
+        Devuelve un valor si la jugada ya está decidida, None si hay que buscar.
+        """
+        b = [row[:] for row in board]
+        rival = ourColor ^ 3
+        tss.set_deadline(deadline)
+        try:
+            # De 2 en adelante: la primera k que lo demuestra es la victoria más
+            # corta (la de 1 turno ya la juega el generador directamente).
+            for k in range(2, TSS_ATTACK_TURNS + 1):
+                line = []
+                if tss.win_in(b, ourColor, k, line) and line[0][0] != "gana":
+                    (x1, y1), (x2, y2) = line[0]
+                    bestMove.positions[0].x, bestMove.positions[0].y = x1, y1
+                    bestMove.positions[1].x, bestMove.positions[1].y = x2, y2
+                    self.m_tss_info = f"ataque (victoria en {k} turnos)"
+                    return WIN_SCORE
+            if not tss.win_in(b, rival, TSS_DEFENSE_STAGES[-1]):
+                return None
+
+            def loses(cells, k):
+                for x, y in cells:
+                    b[x][y] = ourColor
+                try:
+                    return tss.win_in(b, rival, k)
+                finally:
+                    for x, y in cells:
+                        b[x][y] = Defines.NOSTONE
+
+            # Etapas de profundidad creciente sobre las que siguen siendo seguras.
+            # Si se acaba el tiempo a media etapa: las ya comprobadas como seguras
+            # si hay alguna; si no, las que no se han demostrado perdedoras.
+            safe = list(root_moves)
+            stage_done = 0
+            try:
+                for k in TSS_DEFENSE_STAGES:
+                    ok, bad = [], set()
+                    try:
+                        for m in safe:
+                            if loses(move_cells(m), k):
+                                bad.add(move_cells(m))
+                            else:
+                                ok.append(m)
+                    except tss.TSSTimeout:
+                        if ok:
+                            safe = ok
+                        else:
+                            safe = [m for m in safe if move_cells(m) not in bad] or safe
+                        raise
+                    if not ok:
+                        # Todas pierden: defensas nuevas con las casillas clave del rival
+                        ok = self._tss_extra_defenses(b, ourColor, root_moves,
+                                                      lambda c: loses(c, k))
+                        if not ok:
+                            break          # perdidas a esta profundidad: nos quedamos con la etapa anterior
+                    safe = ok
+                    stage_done = k
+            except tss.TSSTimeout:
+                pass
+            self.m_tss_info = f"defensa {len(safe)}/{len(root_moves)} seguras (etapa <= {stage_done})"
+            if safe:
+                self.m_root_moves = safe
+                if len(safe) == 1:
+                    self._copy_move(safe[0], bestMove)
+                    return 0
+            return None
+        except tss.TSSTimeout:
+            return None
+        finally:
+            tss.set_deadline(None)
+
+    def _tss_extra_defenses(self, b, ourColor, root_moves, loses):
+        """Todas las candidatas del generador pierden: probamos parejas con las
+        casillas que más usa el rival en sus jugadas de ataque (sus 'puntos
+        clave') y con las de las candidatas, tapando sus amenazas actuales."""
+        rival = ourColor ^ 3
+        freq = {}
+        for t, c1, c2, thr in tss.attacking_moves(b, rival):
+            for c in (c1, c2):
+                freq[c] = freq.get(c, 0) + t
+        key = sorted(freq, key=freq.get, reverse=True)[:TSS_EXTRA_CELLS]
+        others = []
+        for m in root_moves:
+            for c in move_cells(m):
+                if c not in key and c not in others:
+                    others.append(c)
+        rival_thr = tss.threat_windows(b, rival)
+        tried = {move_cells(m) for m in root_moves}
+        for c1, c2 in list(combinations(key, 2)) + [(k, o) for k in key for o in others[:6]]:
+            cells = frozenset((c1, c2))
+            if cells in tried or any(c1 not in w and c2 not in w for w in rival_thr):
+                continue
+            tried.add(cells)
+            if not loses(cells):
+                m = StoneMove()
+                m.positions[0].x, m.positions[0].y = c1
+                m.positions[1].x, m.positions[1].y = c2
+                return [m]
+        return []
+
     def iterative_deepening(self, board, ourColor, bestMove, preMove, time_limit,
                             max_depth=MAX_ID_DEPTH):
         """
@@ -406,6 +553,7 @@ class SearchEngine():
         preMove = pre
         self.m_depth_reached = 0
         self.m_iterations = []
+        self.m_partial = None          # (prof., jugadas evaluadas, valor) si se usó la iteración interrumpida
 
         # Jugada única (victoria inmediata o única defensa posible): no hay nada que buscar
         root_moves = generate_moves(self.m_board, ourColor, max_moves=MAX_MOVES)
@@ -413,6 +561,15 @@ class SearchEngine():
             self._copy_move(root_moves[0], bestMove)
             self.m_iterations.append((0, 0, time.perf_counter() - start, None))
             return 0
+
+        # Oráculo de amenazas: atajo si hay victoria forzada, filtro si la tiene el rival
+        self.m_root_moves = None
+        self.m_tss_info = None
+        if USE_TSS:
+            tss_score = self._tss_root(board, ourColor, root_moves, bestMove,
+                                       start + time_limit * TSS_TIME_FRACTION)
+            if tss_score is not None:
+                return tss_score
 
         best_score = None
         prev_iter_time = None
@@ -422,11 +579,24 @@ class SearchEngine():
             self.m_alphabeta_depth = depth
             candidate = StoneMove()
             self.m_root_scores_cur = {}
+            self.m_root_done = 0
+            self.m_root_best = None
             try:
                 score = self.alpha_beta_search(depth, Defines.MININT, Defines.MAXINT,
                                                ourColor, candidate, preMove)
             except SearchTimeout:
-                break                              # nos quedamos con la iteración anterior
+                # Iteración interrumpida. La primera jugada de la raíz es la mejor
+                # de la iteración anterior (m_pv_move), así que si se terminó al
+                # menos esa, 'candidate' es la mejor de las ya evaluadas a esta
+                # profundidad: o la misma jugada, o una que la supera a mayor
+                # profundidad. Si todas las evaluadas pierden, nos quedamos con
+                # la anterior (mismo criterio que con una iteración completa).
+                if (USE_PARTIAL_ITER and best_score is not None and self.m_root_done > 0
+                        and self.m_root_best > Defines.MININT):
+                    self._copy_move(candidate, bestMove)
+                    self.m_partial = (depth, self.m_root_done, self.m_root_best)
+                    best_score = self.m_root_best
+                break
             t_iter = time.perf_counter() - t0
             self.m_iterations.append((depth, self.m_total_nodes - nodes0, t_iter, score))
 
@@ -452,7 +622,7 @@ class SearchEngine():
             ebf = t_iter / prev_iter_time if prev_iter_time else DEFAULT_EBF
             ebf = max(ebf, 2.0)
             remaining = self.m_deadline - time.perf_counter()
-            if t_iter * ebf > remaining:
+            if USE_TIME_PREDICTION and t_iter * ebf > remaining:
                 break
             prev_iter_time = max(t_iter, 1e-4)
 

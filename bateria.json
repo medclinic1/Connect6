@@ -1,0 +1,148 @@
+[
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG MFLK LHKI IKNF KHJH IHNH LIJG NKHE KGJI IINI",
+  "cat": "G1",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK IIKI ILMI LJHI LLNL MLHL MMKM NNGI JIKO KNGH FGLN JPPJ LMJM NMHM LKIN HOMJ",
+  "cat": "G1",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ JKKJ ILKK HHIH JHHG GIGH EHGJ IGJF KEEK HIIJ KLEF IIJI FIIF",
+  "cat": "G1",
+  "mover": 2
+ },
+ {
+  "seq": "JJJJ JKKJ HMGN LKLM KKML LLLN LOLI KLMN NOHI JNKN NNHN KMIO HPNJ NMMM OMJM KONL OKJP",
+  "cat": "G1",
+  "mover": 2
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG MFLK LHKI IKNF KHJH IHNH LIJG NKHE",
+  "cat": "G2",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK IIKI ILMI LJHI LLNL MLHL MMKM NNGI JIKO KNGH FGLN JPPJ LMJM NMHM",
+  "cat": "G2",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ JKKJ ILKK HHIH JHHG GIGH EHGJ IGJF KEEK HIIJ KLEF",
+  "cat": "G2",
+  "mover": 2
+ },
+ {
+  "seq": "JJJJ JKKJ HMGN LKLM KKLL MLNM ONIH MNKL NOHI JMMJ INNI",
+  "cat": "G2",
+  "mover": 2
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG MFLK LHKI IKNF KHJH IHNH",
+  "cat": "G3",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK IIKI ILMI LJHI LLNL MLHL MMKM NNGI JIKO KNGH FGLN JPPJ",
+  "cat": "G3",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ JKKJ ILKK HHIH JHHG GIGH EHGJ IGJF KEEK",
+  "cat": "G3",
+  "mover": 2
+ },
+ {
+  "seq": "JJJJ JKKJ HMGN LKLM KKLL MLNM ONIH MNKL NOHI",
+  "cat": "G3",
+  "mover": 2
+ },
+ {
+  "seq": "JJJJ JKKJ HMGN LKLM KKLL MLNM",
+  "cat": "D1",
+  "mover": 1,
+  "defensa": "JION"
+ },
+ {
+  "seq": "JJJJ JKKJ HMGN LKLM KKML LLLN",
+  "cat": "D1",
+  "mover": 1,
+  "defensa": "LJLO"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK IIKI ILMI LJHI LLNL",
+  "cat": "D1",
+  "mover": 2,
+  "defensa": "MLJL"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG",
+  "cat": "D1",
+  "mover": 2,
+  "defensa": "MFME"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG MFLK",
+  "cat": "D2",
+  "mover": 1,
+  "defensa": "LHKI"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK IIKI ILMI LJHI LLNL MLHL MMKM NNGI JIKO KNLN",
+  "cat": "D2",
+  "mover": 1,
+  "defensa": "MNJN"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG MFKI LKNI OHIN LGKF OJJE NGOG KGQG",
+  "cat": "D2",
+  "mover": 1,
+  "defensa": "NJNH"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK IIKI ILMI LJHI LLNL MLHL",
+  "cat": "D3",
+  "mover": 1,
+  "defensa": "GIJI"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG MFKI",
+  "cat": "D3",
+  "mover": 1,
+  "defensa": "JHNL"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK IIKI ILMI",
+  "cat": "D3",
+  "mover": 2,
+  "defensa": "JLLJ"
+ },
+ {
+  "seq": "JJJJ JKIJ KLKK KJLL MHMI LJMK MJMG MFLK LHKI IKNF",
+  "cat": "D3",
+  "mover": 1,
+  "defensa": "LIJI"
+ },
+ {
+  "seq": "JJJJ HJLL",
+  "cat": "A",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ ILJL KIKL",
+  "cat": "A",
+  "mover": 2
+ },
+ {
+  "seq": "JJJJ IJLI",
+  "cat": "A",
+  "mover": 1
+ },
+ {
+  "seq": "JJJJ IKIL JLLJ",
+  "cat": "A",
+  "mover": 2
+ }
+]

@@ -124,7 +124,11 @@ class GameEngine:
 
         print(f"AB Time:\t{end - start:.3f}")
         print(f"Depth:\t{self.m_search_engine.m_depth_reached}")
-        print(f"Node:\t{self.m_search_engine.m_total_nodes}\n")
+        if self.m_search_engine.m_tss_info:
+            print(f"TSS:\t{self.m_search_engine.m_tss_info}")
+        print(f"Node:\t{self.m_search_engine.m_total_nodes}")
+        print(f"Pruned:\t{self.m_search_engine.m_pruned}")
+        print(f"Cutoffs:\t{self.m_search_engine.m_cutoffs}\n")
         print(f"Score:\t{score:.3f}")
         return True
 
