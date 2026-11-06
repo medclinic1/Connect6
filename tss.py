@@ -1,6 +1,8 @@
 """
-Oráculo de amenazas (sesión 5): demuestra victorias forzadas en Connect6 para
-etiquetar las posiciones de la batería de pruebas. NO lo usa el motor.
+Oráculo de amenazas (sesión 5): demuestra victorias forzadas en Connect6.
+Lo usa el motor en la raíz, antes de alfa-beta (search_engine.py, USE_TSS):
+juega las victorias demostradas y descarta las jugadas que pierden. También
+sirve para etiquetar las posiciones de la batería de pruebas (bateria.py).
 
 Idea (búsqueda en el espacio de amenazas, Wu y Huang 2005): el atacante solo
 juega jugadas que dejan al rival sin elección.
